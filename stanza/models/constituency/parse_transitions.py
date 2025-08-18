@@ -639,3 +639,50 @@ def check_transitions(train_transitions, other_transitions, treebank_name):
             unknown_transitions.add(trans)
     if len(unknown_transitions) > 0:
         logger.warning("Found transitions where the components are all valid transitions, but the complete transition is unknown: %s", sorted(unknown_transitions))
+
+
+# the following classes are used to turn a constituent parser to a dependency parser
+class LeftArc(Transition):
+    def update_state(self, state, model):
+        """
+        This will handel all aspects of a left arc transition
+
+        - create a new arc in the stack by using the last two word, the left one being the head
+        - pop the last word from the stack
+        """
+        constituents = state.constituents
+        # add new arc
+        new_arc = (constituents[-2].value, constituents[-1].value)
+        # pop the child (left: -1, right: -2)
+        constituents = constituents.pop(-1)
+
+        return state.word_position, constituents, new_arc, None
+    
+    def build_constituents(model, data):
+        """
+        """
+
+    # def is_legal(self, state, model):
+
+    # def components(self):
+    #     return [OpenConstituent(label) for label in self.label]
+
+    # def short_name(self):
+    #     return "Open"
+
+    # def __repr__(self):
+    #     return "OpenConstituent({})".format(self.label)
+
+    # def __eq__(self, other):
+    #     if self is other:
+    #         return True
+    #     if not isinstance(other, OpenConstituent):
+    #         return False
+    #     if self.label == other.label:
+    #         return True
+    #     return False
+
+    # def __hash__(self):
+    #     return hash(self.label)
+        
+
