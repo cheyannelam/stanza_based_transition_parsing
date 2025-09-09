@@ -1,7 +1,7 @@
 from collections import namedtuple
 
-class State(namedtuple('State', ['word_queue', 'transitions', 'stacks', 'created_arcs', 
-                                 'gold_arcs', 'gold_sequence',
+class State(namedtuple('State', ['word_queue', 'transitions', 'constituents', 'stacks', 'created_arcs', 
+                                 'gold_tree', 'gold_sequence',
                                  'sentence_length', 'word_position', 'score'])):
     
     """
@@ -10,29 +10,39 @@ class State(namedtuple('State', ['word_queue', 'transitions', 'stacks', 'created
     - word_queue: list of all words in the sentence, will not be modified
         ?(The word_queue should have both a start and an end word.)
     - transitions: list of transitions taken to reach this state
-    - stack: list of indices
+    - constituents: list of word forms in the stack (naming is for compatibility with constituency parser)
+    - stack: list of indices in the stack
     - created_arcs: set of (head, dependent) tuples representing arcs created so far
-    - gold_arcs: set of (head, dependent) tuples representing the gold arcs for this sentence, might be None (None in runtime)
+    - gold_tree: set of (head, dependent) tuples representing the gold arcs for this sentence, might be None (None in runtime)
     - gold_sequence: the original transition sequence, might be None (None in runtime)
     - sentence_length: length of the sentence
     - word_position: current position of the buffer in the word queue
 
     """
 
-    @property
-    def is_empty_buffer(self):
+    def empty_word_queue(self):
         # the first element of each stack is a sentinel with no value
         # and no parent
         return self.word_position == self.sentence_length
 
-    @property
-    def is_empty_transitions(self):
+    def empty_transitions(self):
         # the first element of each stack is a sentinel with no value
         # and no parent
         return self.transitions.parent is None
 
+    def has_one_constituent(self):
+        # a length of 1 represents no constituents
+        return self.constituents.length == 2
+
     @property
-    def is_empty_stacks(self):
+    def empty_constituents(self):
+        return self.constituents.length == 1
+
+    def num_constituents(self):
+        return self.constituents.length - 1
+    
+    @property
+    def empty_stacks(self):
         return self.stack.length == 0
 
     @property
@@ -51,7 +61,7 @@ class State(namedtuple('State', ['word_queue', 'transitions', 'stacks', 'created
         return self.word_queue[pos+1]
 
     def finished(self, model):
-        return self.is_empty_buffer and self.is_empty_stacks
+        return self.empty_word_queue() and self.empty_stacks
 
 
     def all_transitions(self, model):
@@ -62,6 +72,15 @@ class State(namedtuple('State', ['word_queue', 'transitions', 'stacks', 'created
             all_transitions.append(model.get_top_transition(transitions))
             transitions = transitions.parent
         return list(reversed(all_transitions))
+    
+    def all_constituents(self, model):
+        # TODO: rewrite this to be nicer / faster?
+        all_constituents = []
+        constituents = self.constituents
+        while constituents.parent is not None:
+            all_constituents.append(model.get_top_constituent(constituents))
+            constituents = constituents.parent
+        return list(reversed(all_constituents))
     
     def all_stacks(self, model):
         all_stacks = []
