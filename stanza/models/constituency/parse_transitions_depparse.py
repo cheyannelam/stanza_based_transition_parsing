@@ -71,16 +71,14 @@ class Transition(ABC):
 
         the return value should be a tuple:
           updated word_position
-          updated constituents
-          new constituent to put on the queue and None
-            - note that the constituent shouldn't be on the queue yet
-              that allows putting it on as a batch operation, which
-              saves a significant amount of time in an LSTM, for example
-          OR
-          data used to make a new constituent and the method used
-            - for example, CloseConstituent can return the children needed
-              and itself.  this allows a batch operation to build
-              the constituent
+          updated constituents (without the top item)
+          top constituent
+          updated stacks (without the top item)
+          top stack
+          updated created_arcs
+        
+        the design might allow the lstm to do batch operations
+
         """
 
     def delta_opens(self):
@@ -179,10 +177,11 @@ class Shift(Transition):
 
         - push the top element of the word queue onto constituents
         - pop the top element of the word queue
-        """
-        new_word = state.word_queue[state.word_position]
 
-        return state.word_position+1, state.constituents, new_word, None
+        """
+        new_constituent = state.word_queue[state.word_position]
+
+        return state.word_position+1, state.constituents, new_constituent, state.stacks, state.word_position, state.created_arcs
 
     def is_legal(self, state, model):
         """
@@ -210,9 +209,6 @@ class Shift(Transition):
     def __hash__(self):
         return hash(37)
     
-
-
-# the following classes are used to turn a constituent parser to a dependency parser
 class LeftArc(Transition):
     def update_state(self, state, model):
         """
@@ -220,14 +216,16 @@ class LeftArc(Transition):
 
         - create a new arc in the stack by using the last two word, the left one being the head
         - pop the last word from the stack
-        """
-        constituents = state.constituents
-        # add new arc
-        new_arc = (constituents[-2].value, constituents[-1].value)
-        # pop the child (left: -1, right: -2)
-        constituents = constituents.pop(-1)
 
-        return state.word_position, constituents, new_arc, None
+        """
+        constituents = state.constituents[2:]
+        stacks = state.stacks[2:]
+        new_constituent = state.constituents[1]
+        new_stacks = state.stacks[1]
+        # add new arc
+        new_arc = (constituents[1].value, constituents[0].value)
+
+        return state.word_position, constituents, new_constituent, stacks, new_stacks, state.created_arcs.push(new_arc)
 
 
     def is_legal(self, state, model):
@@ -255,3 +253,44 @@ class LeftArc(Transition):
         return hash(17)
         
 
+class RightArc(Transition):
+    def update_state(self, state, model):
+        """
+        This will handel all aspects of a left arc transition
+
+        - create a new arc in the stack by using the last two word, the left one being the head
+        - pop the last word from the stack
+        """
+        constituents = state.constituents[2:]
+        stacks = state.stacks[2:]
+        new_constituent = state.constituents[0]
+        new_stacks = state.stacks[0]
+        # add new arc
+        new_arc = (constituents[0].value, constituents[1].value)
+
+        return state.word_position, constituents, new_constituent, stacks, new_stacks, state.created_arcs.push(new_arc)
+
+
+    def is_legal(self, state, model):
+        """
+        Disallow left arc when there are less than two words in the stack
+        """
+        print(state)
+        if state.num_stacks >= 2:
+            return True
+
+    def short_name(self):
+        return "RightArc"
+
+    def __repr__(self):
+        return "RightArc"
+
+    def __eq__(self, other):
+        if self is other:
+            return True
+        if isinstance(other, RightArc):
+            return True
+        return False
+
+    def __hash__(self):
+        return hash(71)
