@@ -1,6 +1,6 @@
 from collections import namedtuple
 
-class State(namedtuple('State', ['word_queue', 'transitions', 'stack', 'created_arcs', 
+class State(namedtuple('State', ['word_queue', 'transitions', 'stacks', 'created_arcs', 
                                  'gold_arcs', 'gold_sequence',
                                  'sentence_length', 'word_position', 'score'])):
     
@@ -19,12 +19,88 @@ class State(namedtuple('State', ['word_queue', 'transitions', 'stack', 'created_
 
     """
 
-    def empty_word_queue(self):
+    @property
+    def is_empty_buffer(self):
         # the first element of each stack is a sentinel with no value
         # and no parent
         return self.word_position == self.sentence_length
 
-    def empty_transitions(self):
+    @property
+    def is_empty_transitions(self):
         # the first element of each stack is a sentinel with no value
         # and no parent
         return self.transitions.parent is None
+
+    @property
+    def is_empty_stacks(self):
+        return self.stack.length == 0
+
+    @property
+    def num_transitions(self):
+        # -1 for the sentinel value
+        return self.transitions.length - 1
+    
+    @property
+    def num_stacks(self):
+        return self.stacks.length - 1
+
+    @property
+    def get_word(self, pos):
+        # +1 to handle the initial sentinel value
+        # (which you can actually get with pos=-1)
+        return self.word_queue[pos+1]
+
+    def finished(self, model):
+        return self.is_empty_buffer and self.is_empty_stacks
+
+
+    def all_transitions(self, model):
+        # TODO: rewrite this to be nicer / faster?  or just refactor?
+        all_transitions = []
+        transitions = self.transitions
+        while transitions.parent is not None:
+            all_transitions.append(model.get_top_transition(transitions))
+            transitions = transitions.parent
+        return list(reversed(all_transitions))
+    
+    def all_stacks(self, model):
+        all_stacks = []
+        stacks = self.stacks
+        words = self.word_queue
+        for id in stacks:
+            all_stacks.append(words[id])
+        return all_stacks
+    
+    def all_buffers(self, model):
+        return self.word_queue[self.word_position:]
+    
+    def all_created_arcs(self, model):
+        created_arcs = self.created_arcs
+        all_created_arcs = []
+        for (h, d) in created_arcs:
+            all_created_arcs.append((self.word_queue[h], self.word_queue[d]))
+        return all_created_arcs
+
+    def all_words(self, model):
+        return [model.get_word(x) for x in self.word_queue]
+
+    def to_string(self, model):
+        return "State(\n  stacks:%s\n  buffers:%s\  transitions:%s\n)" % (str(self.all_words(model)), str(self.all_transitions(model)), str(self.all_constituents(model)), self.word_position, self.num_opens)
+
+    def __str__(self):
+        """'word_queue', 'transitions', 'stacks', 'created_arcs', 
+                                 'gold_arcs', 'gold_sequence',
+                                 'sentence_length', 'word_position', 'score'"""
+        
+        print("------------------------------")
+        print(f"word_queue: {self.word_queue}")
+        print(f"transitions: {self.transitions}")
+        print(f"stacks: {self.stacks}")
+        print(f"created_arcs: {self.created_arcs}")
+        print(f"gold_arcs: {self.gold_arcs}")
+        print(f"gold_sequence: {self.gold_sequence}")
+        print(f"sentence_length: {self.sentence_length}")
+        print(f"word_position: {self.word_position}")
+        print(f"score: {self.score}")
+
+        return None
