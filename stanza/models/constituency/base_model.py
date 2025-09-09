@@ -407,7 +407,9 @@ class BaseModel(ABC):
         word_positions = []
         constituents = []
         new_constituents = []
-        callbacks = defaultdict(list)
+        stacks = []
+        new_stacks = []
+        created_arcs = []
 
         for idx, (tree, transition) in enumerate(zip(state_batch, transitions)):
             if not transition:
@@ -435,20 +437,26 @@ class BaseModel(ABC):
                     remove.add(idx)
                     continue
 
-            wq, c, nc, callback = transition.update_state(tree, self)
+            wq, c, nc, s, ns, a = transition.update_state(tree, self)
 
             word_positions.append(wq)
             constituents.append(c)
             new_constituents.append(nc)
-            if callback:
-                # not `idx` in case something was removed
-                callbacks[callback].append(len(new_constituents)-1)
+            stacks.append(s)
+            new_stacks.append(ns)
+            created_arcs.append(a)
 
-        for key, idxs in callbacks.items():
-            data = [new_constituents[x] for x in idxs]
-            callback_constituents = key.build_constituents(self, data)
-            for idx, constituent in zip(idxs, callback_constituents):
-                new_constituents[idx] = constituent
+        #need implementation!! 2025-09-09
+
+        #     if callback:
+        #         # not `idx` in case something was removed
+        #         callbacks[callback].append(len(new_constituents)-1) 
+
+        # for key, idxs in callbacks.items():
+        #     data = [new_constituents[x] for x in idxs]
+        #     callback_constituents = key.build_constituents(self, data)
+        #     for idx, constituent in zip(idxs, callback_constituents):
+        #         new_constituents[idx] = constituent
 
         if len(remove) > 0:
             state_batch = [tree for idx, tree in enumerate(state_batch) if idx not in remove]
@@ -459,13 +467,18 @@ class BaseModel(ABC):
 
         new_transitions = self.push_transitions([tree.transitions for tree in state_batch], transitions)
         new_constituents = self.push_constituents(constituents, new_constituents)
+        new_stacks = self.push_constituents(stacks, new_stacks)     # use the constituents's push function as they have the same structure
 
-        state_batch = [state._replace(num_opens=state.num_opens + transition.delta_opens(),
-                                      word_position=word_position,
+        
+        state_batch = [state._replace(word_position=word_position,
                                       transitions=transition_stack,
-                                      constituents=constituents)
-                      for (state, transition, word_position, transition_stack, constituents)
-                      in zip(state_batch, transitions, word_positions, new_transitions, new_constituents)]
+                                      constituents=constituents,
+                                      stacks=stacks,
+                                      created_arcs=created_arcs
+                                      
+                                      )
+                      for (state, word_position, transition_stack, constituents, stacks, created_arcs)
+                      in zip(state_batch, word_positions, new_transitions, new_constituents, new_stacks, created_arcs)]
 
         return state_batch
 
@@ -530,3 +543,4 @@ class SimpleModel(BaseModel):
 
     def get_top_transition(self, transitions):
         return transitions.value
+    
