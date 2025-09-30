@@ -467,7 +467,7 @@ class BaseModel(ABC):
 
         new_transitions = self.push_transitions([tree.transitions for tree in state_batch], transitions)
         new_constituents = self.push_constituents(constituents, new_constituents)
-        new_stacks = self.push_constituents(stacks, new_stacks)     # use the constituents's push function as they have the same structure
+        new_stacks = self.push_constituents(stacks, new_stacks)     # use the constituents's push function as they have the same structure ?
 
         
         state_batch = [state._replace(word_position=word_position,
