@@ -8,7 +8,7 @@ import logging
 
 from stanza.models.common import utils
 #from stanza.models.constituency.parse_transitions import Shift, CompoundUnary, OpenConstituent, CloseConstituent, TransitionScheme, Finalize
-# from stanza.models.constituency.parse_transitions import Shift, LeftArc, RightArc, TransitionScheme
+# from stanza.models.constituency.parse_transitions import Shift, RightArc, LeftArc, TransitionScheme
 from stanza.models.constituency.parse_transitions import TransitionScheme
 from stanza.models.constituency.tree_reader import read_trees
 from stanza.utils.get_tqdm import get_tqdm
@@ -21,16 +21,16 @@ logger = logging.getLogger('stanza.constituency.trainer')
 
 
 
-def Shift(buffer, stack, steps, done): 
-    steps.append([buffer[:], stack[:], "SHIFT"])
+def do_shift(buffer, stack, steps, done): 
+    steps.append([buffer[:], stack[:], "Shift"])
     stack.append(buffer.pop(0))
 
-def LeftArc(buffer, stack, steps, done):
-    steps.append([buffer[:], stack[:], "LEFTARC"])
+def do_rightarc(buffer, stack, steps, done):
+    steps.append([buffer[:], stack[:], "RightArc"])
     done.add(stack.pop(-2))
     
-def RightArc(buffer, stack, steps, done):
-    steps.append([buffer[:], stack[:], "RIGHTARC"])
+def do_leftarc(buffer, stack, steps, done):
+    steps.append([buffer[:], stack[:], "LeftArc"])
     done.add(stack.pop(-1))
 
 def is_done(dependent, dependents, done):
@@ -38,18 +38,17 @@ def is_done(dependent, dependents, done):
 
 def UD_to_oracle(sentence):
     """
-    Convert a projective UD tree to arc-standard oracle steps using the Shift/LeftArc/RightArc functions.
+    Convert a projective UD tree to arc-standard oracle steps using the do_shift/do_rightarc/do_leftarc functions.
 
     Args:
         sentence (List[Dict]): Each token has 'id' and 'head' fields.
 
     Returns:
         List[List]: Each step as [buffer, stack, action]
-    """
+    """ 
     # Add ROOT node
     root = {'id': 0, 'form': 'ROOT', 'head': None}
-    tokens = [root] + [t for _, t in sentence.items() if '-' not in t['id'] and '.' not in t['id']]
-    tokens = [{**t, 'id': int(t['id']), 'head': int(t['head']) if t['head'] is not None else -1} for t in tokens]
+    tokens = [root] + sentence
 
     heads = {tok['id']: tok['head'] for tok in tokens if tok['id'] != 0}
     dependents = defaultdict(list)
@@ -62,80 +61,29 @@ def UD_to_oracle(sentence):
     done = set()
     steps = []
 
-    def can_LeftArc():
+    def can_RightArc():
         if len(stack) < 2:
             return False
         s1, s0 = stack[-2], stack[-1]
         return heads.get(s1) == s0 and is_done(s1, dependents, done)
 
-    def can_RightArc():
+    def can_LeftArc():
         if len(stack) < 2:
             return False
         s1, s0 = stack[-2], stack[-1]
         return heads.get(s0) == s1 and is_done(s0, dependents, done)
 
     while buffer or len(stack) > 1:
-        if can_LeftArc():
-            LeftArc(buffer, stack, steps, done)
-        elif can_RightArc():
-            RightArc(buffer, stack, steps, done)
+        if can_RightArc():
+            do_rightarc(buffer, stack, steps, done)
+        elif can_LeftArc():
+            do_leftarc(buffer, stack, steps, done)
         elif buffer:
-            Shift(buffer, stack, steps, done)
+            do_shift(buffer, stack, steps, done)
         else:
             raise ValueError("Non-projective tree or stuck parser.")
 
-    return steps
-
-def oracle_to_UD(tokens, actions):
-    """
-    Reconstruct UD heads from a list of arc-standard parser actions.
-
-    Args:
-        tokens (List[Dict]): List of token dicts with at least 'id' and 'form'.
-                             Should NOT include ROOT; we add ROOT internally.
-        actions (List[str]): List of parser actions: 'SHIFT', 'LEFTARC', 'RIGHTARC'
-
-    Returns:
-        List[Dict]: Tokens with reconstructed 'head' fields.
-    """
-
-    # Add ROOT
-    root = {'id': 0, 'form': 'ROOT'}
-    tokens = [root] + [dict(t) for t in tokens]  # deep copy to avoid mutation
-    for tok in tokens:
-        tok['id'] = int(tok['id'])
-
-    buffer = [tok['id'] for tok in tokens if tok['id'] != 0]
-    stack = [0]  # ROOT
-    arcs = []
-
-    for action in actions:
-        if action == "SHIFT":
-            stack.append(buffer.pop(0))
-        elif action == "LEFTARC":
-            head = stack[-1]
-            dep = stack[-2]
-            arcs.append((head, dep))  # head ← dep
-            stack.pop(-2)
-        elif action == "RIGHTARC":
-            head = stack[-2]
-            dep = stack[-1]
-            arcs.append((head, dep))  # head ← dep
-            stack.pop()
-        else:
-            raise ValueError(f"Invalid action: {action}")
-
-    # Assign heads
-    heads = {dep: head for head, dep in arcs}
-    for tok in tokens:
-        if tok['id'] == 0:
-            continue
-        tok['head'] = str(heads.get(tok['id'], 0))  # default to ROOT if not found
-        tok['id'] = str(tok['id'])  # convert back to string for consistency
-
-    return tokens[1:]  # exclude the added ROOT token
-
-
+    return [transition for _, _, transition in steps]
 
 
 def build_sequence(tree, transition_scheme=TransitionScheme.IN_ORDER):
@@ -196,12 +144,20 @@ def main():
     10	問題	問題	NOUN	NN	_	7	obj	_	SpaceAfter=No|Translit=wèntí|LTranslit=wèntí
     11	。	。	PUNCT	.	_	7	punct	_	SpaceAfter=No|Translit=.|LTranslit=.
 
+    # sent_id = test-s2
+    # text = 自從2004年提出了興建人文大樓的構想，企業界陸續有人提供捐款。
+    1	自從	自從	ADP	IN	_	0	case	_	SpaceAfter=No|Translit=zìcóng|LTranslit=zìcóng
+
+
     """
 
-    tree = CoNLL.conll2dict(input_str=text)
+    trees = CoNLL.conll2dict(input_str=text)[0]
 
-    print(tree)
-    transitions = build_sequence(tree)
+    for tree in trees:
+        for token in tree:
+            token["id"] =  token["id"][0]
+
+    transitions = build_sequence(trees[0])
     print(transitions)
 
 if __name__ == '__main__':
