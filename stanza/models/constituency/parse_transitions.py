@@ -256,9 +256,9 @@ class LeftArc(Transition):
 class RightArc(Transition):
     def update_state(self, state, model):
         """
-        This will handel all aspects of a left arc transition
+        This will handel all aspects of a right arc transition
 
-        - create a new arc in the stack by using the last two word, the left one being the head
+        - create a new arc in the stack by using the last two word, the right one being the head
         - pop the last word from the stack
         """
         constituents = state.constituents[2:]
