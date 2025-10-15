@@ -8,136 +8,143 @@ import logging
 
 from stanza.models.common import utils
 #from stanza.models.constituency.parse_transitions import Shift, CompoundUnary, OpenConstituent, CloseConstituent, TransitionScheme, Finalize
-from stanza.models.constituency.parse_transitions import Shift, LeftArc, RightArc, TransitionScheme
+# from stanza.models.constituency.parse_transitions import Shift, LeftArc, RightArc, TransitionScheme
+from stanza.models.constituency.parse_transitions import TransitionScheme
 from stanza.models.constituency.tree_reader import read_trees
 from stanza.utils.get_tqdm import get_tqdm
+from stanza.utils.conll import CoNLL
+from collections import defaultdict
 
 tqdm = get_tqdm()
 
 logger = logging.getLogger('stanza.constituency.trainer')
 
-# def yield_top_down_sequence(tree, transition_scheme=TransitionScheme.TOP_DOWN_UNARY):
-#     """
-#     For tree (X A B C D), yield Open(X) A B C D Close
 
-#     The details are in how to treat unary transitions
-#     Three possibilities handled by this method:
-#       TOP_DOWN_UNARY:    (Y (X ...)) -> Open(X) ... Close Unary(Y)
-#       TOP_DOWN_COMPOUND: (Y (X ...)) -> Open(Y, X) ... Close
-#       TOP_DOWN:          (Y (X ...)) -> Open(Y) Open(X) ... Close Close
-#     """
-#     if tree.is_preterminal():
-#         yield Shift()
-#         return
 
-#     if tree.is_leaf():
-#         return
+def Shift(buffer, stack, steps, done): 
+    steps.append([buffer[:], stack[:], "SHIFT"])
+    stack.append(buffer.pop(0))
 
-#     if transition_scheme is TransitionScheme.TOP_DOWN_UNARY:
-#         if len(tree.children) == 1:
-#             labels = []
-#             while not tree.is_preterminal() and len(tree.children) == 1:
-#                 labels.append(tree.label)
-#                 tree = tree.children[0]
-#             for transition in yield_top_down_sequence(tree, transition_scheme):
-#                 yield transition
-#             yield CompoundUnary(*labels)
-#             return
+def LeftArc(buffer, stack, steps, done):
+    steps.append([buffer[:], stack[:], "LEFTARC"])
+    done.add(stack.pop(-2))
+    
+def RightArc(buffer, stack, steps, done):
+    steps.append([buffer[:], stack[:], "RIGHTARC"])
+    done.add(stack.pop(-1))
 
-#     if transition_scheme is TransitionScheme.TOP_DOWN_COMPOUND:
-#         labels = [tree.label]
-#         while len(tree.children) == 1 and not tree.children[0].is_preterminal():
-#             tree = tree.children[0]
-#             labels.append(tree.label)
-#         yield OpenConstituent(*labels)
-#     else:
-#         yield OpenConstituent(tree.label)
-#     for child in tree.children:
-#         for transition in yield_top_down_sequence(child, transition_scheme):
-#             yield transition
-#     yield CloseConstituent()
+def is_done(dependent, dependents, done):
+    return all(d in done for d in dependents[dependent])
 
-def yield_in_order_sequence(tree):
+def UD_to_oracle(sentence):
     """
-    For tree (X A B C D), yield A Open(X) B C D Close
+    Convert a projective UD tree to arc-standard oracle steps using the Shift/LeftArc/RightArc functions.
+
+    Args:
+        sentence (List[Dict]): Each token has 'id' and 'head' fields.
+
+    Returns:
+        List[List]: Each step as [buffer, stack, action]
     """
-    if tree.is_preterminal():
-        yield Shift()
-        return
+    # Add ROOT node
+    root = {'id': 0, 'form': 'ROOT', 'head': None}
+    tokens = [root] + [t for _, t in sentence.items() if '-' not in t['id'] and '.' not in t['id']]
+    tokens = [{**t, 'id': int(t['id']), 'head': int(t['head']) if t['head'] is not None else -1} for t in tokens]
 
-    if tree.is_leaf():
-        return
+    heads = {tok['id']: tok['head'] for tok in tokens if tok['id'] != 0}
+    dependents = defaultdict(list)
+    for tok in tokens:
+        if tok['head'] not in (None, -1):
+            dependents[tok['head']].append(tok['id'])
 
-    for transition in yield_in_order_sequence(tree.children[0]):
-        yield transition
+    buffer = [tok['id'] for tok in tokens if tok['id'] != 0]  # exclude ROOT from buffer
+    stack = [0]  # start with ROOT on stack
+    done = set()
+    steps = []
 
-    yield OpenConstituent(tree.label)
+    def can_LeftArc():
+        if len(stack) < 2:
+            return False
+        s1, s0 = stack[-2], stack[-1]
+        return heads.get(s1) == s0 and is_done(s1, dependents, done)
 
-    for child in tree.children[1:]:
-        for transition in yield_in_order_sequence(child):
-            yield transition
+    def can_RightArc():
+        if len(stack) < 2:
+            return False
+        s1, s0 = stack[-2], stack[-1]
+        return heads.get(s0) == s1 and is_done(s0, dependents, done)
 
-    yield CloseConstituent()
+    while buffer or len(stack) > 1:
+        if can_LeftArc():
+            LeftArc(buffer, stack, steps, done)
+        elif can_RightArc():
+            RightArc(buffer, stack, steps, done)
+        elif buffer:
+            Shift(buffer, stack, steps, done)
+        else:
+            raise ValueError("Non-projective tree or stuck parser.")
+
+    return steps
+
+def oracle_to_UD(tokens, actions):
+    """
+    Reconstruct UD heads from a list of arc-standard parser actions.
+
+    Args:
+        tokens (List[Dict]): List of token dicts with at least 'id' and 'form'.
+                             Should NOT include ROOT; we add ROOT internally.
+        actions (List[str]): List of parser actions: 'SHIFT', 'LEFTARC', 'RIGHTARC'
+
+    Returns:
+        List[Dict]: Tokens with reconstructed 'head' fields.
+    """
+
+    # Add ROOT
+    root = {'id': 0, 'form': 'ROOT'}
+    tokens = [root] + [dict(t) for t in tokens]  # deep copy to avoid mutation
+    for tok in tokens:
+        tok['id'] = int(tok['id'])
+
+    buffer = [tok['id'] for tok in tokens if tok['id'] != 0]
+    stack = [0]  # ROOT
+    arcs = []
+
+    for action in actions:
+        if action == "SHIFT":
+            stack.append(buffer.pop(0))
+        elif action == "LEFTARC":
+            head = stack[-1]
+            dep = stack[-2]
+            arcs.append((head, dep))  # head ← dep
+            stack.pop(-2)
+        elif action == "RIGHTARC":
+            head = stack[-2]
+            dep = stack[-1]
+            arcs.append((head, dep))  # head ← dep
+            stack.pop()
+        else:
+            raise ValueError(f"Invalid action: {action}")
+
+    # Assign heads
+    heads = {dep: head for head, dep in arcs}
+    for tok in tokens:
+        if tok['id'] == 0:
+            continue
+        tok['head'] = str(heads.get(tok['id'], 0))  # default to ROOT if not found
+        tok['id'] = str(tok['id'])  # convert back to string for consistency
+
+    return tokens[1:]  # exclude the added ROOT token
 
 
 
-# def yield_in_order_compound_sequence(tree, transition_scheme):
-#     def helper(tree):
-#         if tree.is_leaf():
-#             return
 
-#         labels = []
-#         while len(tree.children) == 1 and not tree.is_preterminal():
-#             labels.append(tree.label)
-#             tree = tree.children[0]
-
-#         if tree.is_preterminal():
-#             yield Shift()
-#             if len(labels) > 0:
-#                 yield CompoundUnary(*labels)
-#             return
-
-#         for transition in helper(tree.children[0]):
-#             yield transition
-
-#         if transition_scheme is TransitionScheme.IN_ORDER_UNARY:
-#             yield OpenConstituent(tree.label)
-#         else:
-#             labels.append(tree.label)
-#             yield OpenConstituent(*labels)
-
-#         for child in tree.children[1:]:
-#             for transition in helper(child):
-#                 yield transition
-
-#         yield CloseConstituent()
-
-#         if transition_scheme is TransitionScheme.IN_ORDER_UNARY and len(labels) > 0:
-#             yield CompoundUnary(*labels)
-
-#     if len(tree.children) == 0:
-#         raise ValueError("Cannot build {} on an empty tree".format(transition_scheme))
-#     if len(tree.children) != 1:
-#         raise ValueError("Cannot build {} with a tree that has two top level nodes: {}".format(transition_scheme, tree))
-
-#     for t in helper(tree.children[0]):
-#         yield t
-
-#     yield Finalize(tree.label)
-
-def build_sequence(tree, transition_scheme=TransitionScheme.TOP_DOWN_UNARY):
+def build_sequence(tree, transition_scheme=TransitionScheme.IN_ORDER):
     """
     Turn a single tree into a list of transitions based on the TransitionScheme
     """
-    if transition_scheme is TransitionScheme.IN_ORDER:
-        return list(yield_in_order_sequence(tree))
-    # elif (transition_scheme is TransitionScheme.IN_ORDER_COMPOUND or
-    #       transition_scheme is TransitionScheme.IN_ORDER_UNARY):
-    #     return list(yield_in_order_compound_sequence(tree, transition_scheme))
-    # else:
-    #     return list(yield_top_down_sequence(tree, transition_scheme))
+    return UD_to_oracle(tree)
 
-def build_treebank(trees, transition_scheme=TransitionScheme.TOP_DOWN_UNARY, reverse=False):
+def build_treebank(trees, transition_scheme=TransitionScheme.IN_ORDER, reverse=False):
     """
     Turn each of the trees in the treebank into a list of transitions based on the TransitionScheme
     """
@@ -174,10 +181,24 @@ def main():
     """
     Convert a sample tree and print its transitions
     """
-    text="( (SBARQ (WHNP (WP Who)) (SQ (VP (VBZ sits) (PP (IN in) (NP (DT this) (NN seat))))) (. ?)))"
-    #text = "(WP Who)"
+    text = """
+    # sent_id = test-s1
+    # text = 然而，這樣的處理也衍生了一些問題。
+    1	然而	然而	SCONJ	RB	_	7	mark	_	SpaceAfter=No|Translit=rán'ér|LTranslit=rán'ér
+    2	，	，	PUNCT	,	_	1	punct	_	SpaceAfter=No|Translit=,|LTranslit=,
+    3	這樣	這樣	PRON	PRD	_	5	det	_	SpaceAfter=No|Translit=zhèyàng|LTranslit=zhèyàng
+    4	的	的	PART	DEC	Case=Gen	3	case	_	SpaceAfter=No|Translit=de|LTranslit=de
+    5	處理	處理	NOUN	NN	_	7	nsubj	_	SpaceAfter=No|Translit=chùlǐ|LTranslit=chùlǐ
+    6	也	也	SCONJ	RB	_	7	mark	_	SpaceAfter=No|Translit=yě|LTranslit=yě
+    7	衍生	衍生	VERB	VV	_	0	root	_	SpaceAfter=No|Translit=yǎnshēng|LTranslit=yǎnshēng
+    8	了	了	AUX	AS	Aspect=Perf	7	aux	_	SpaceAfter=No|Translit=le|LTranslit=le
+    9	一些	一些	ADJ	JJ	_	10	amod	_	SpaceAfter=No|Translit=yīxiē|LTranslit=yīxiē
+    10	問題	問題	NOUN	NN	_	7	obj	_	SpaceAfter=No|Translit=wèntí|LTranslit=wèntí
+    11	。	。	PUNCT	.	_	7	punct	_	SpaceAfter=No|Translit=.|LTranslit=.
 
-    tree = read_trees(text)[0]
+    """
+
+    tree = CoNLL.conll2dict(input_str=text)
 
     print(tree)
     transitions = build_sequence(tree)
