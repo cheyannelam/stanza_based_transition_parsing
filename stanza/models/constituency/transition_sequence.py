@@ -46,6 +46,12 @@ def UD_to_oracle(sentence):
     Returns:
         List[List]: Each step as [buffer, stack, action]
     """ 
+    print("printing sentence")
+    print(sentence)
+
+    for token in sentence:
+            token["id"] =  token["id"][0]
+    
     # Add ROOT node
     root = {'id': 0, 'form': 'ROOT', 'head': None}
     tokens = [root] + sentence
@@ -96,10 +102,11 @@ def build_treebank(trees, transition_scheme=TransitionScheme.IN_ORDER, reverse=F
     """
     Turn each of the trees in the treebank into a list of transitions based on the TransitionScheme
     """
-    if reverse:
-        return [build_sequence(tree.reverse(), transition_scheme) for tree in trees]
-    else:
-        return [build_sequence(tree, transition_scheme) for tree in trees]
+    # if reverse:
+    #     return [build_sequence(tree.reverse(), transition_scheme) for tree in trees]
+    # else:
+    #     return [build_sequence(tree, transition_scheme) for tree in trees]
+    return [build_sequence(tree, transition_scheme) for tree in trees]
 
 def all_transitions(transition_lists):
     """
@@ -116,11 +123,17 @@ def convert_trees_to_sequences(trees, treebank_name, transition_scheme, reverse=
 
     Converts trees to a list of sequences, then returns the list of known transitions
     """
+
+    
+    
     if len(trees) == 0:
         return [], []
+    
+    trees = trees[0]
+
     logger.info("Building %s transition sequences", treebank_name)
-    if logger.getEffectiveLevel() <= logging.INFO:
-        trees = tqdm(trees)
+    # if logger.getEffectiveLevel() <= logging.INFO:
+    #     trees = tqdm(trees)
     sequences = build_treebank(trees, transition_scheme, reverse)
     transitions = all_transitions(sequences)
     return sequences, transitions
@@ -152,10 +165,6 @@ def main():
     """
 
     trees = CoNLL.conll2dict(input_str=text)[0]
-
-    for tree in trees:
-        for token in tree:
-            token["id"] =  token["id"][0]
 
     transitions = build_sequence(trees[0])
     print(transitions)
