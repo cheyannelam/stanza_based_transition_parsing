@@ -18,15 +18,16 @@ from stanza.models.constituency import parse_transitions
 from stanza.models.constituency import transition_sequence
 from stanza.models.constituency import tree_reader
 # from stanza.models.constituency.in_order_compound_oracle import InOrderCompoundOracle
-from stanza.models.constituency.in_order_oracle import InOrderOracle
+# from stanza.models.constituency.in_order_oracle import InOrderOracle
 from stanza.models.constituency.lstm_model import LSTMModel
 from stanza.models.constituency.parse_transitions import TransitionScheme
 from stanza.models.constituency.parse_tree import Tree
-from stanza.models.constituency.top_down_oracle import TopDownOracle
+# from stanza.models.constituency.top_down_oracle import TopDownOracle
 from stanza.models.constituency.trainer import Trainer
 from stanza.models.constituency.utils import retag_trees, build_optimizer, build_scheduler, verify_transitions, get_open_nodes, check_constituents, check_root_labels, remove_duplicate_trees, remove_singleton_trees
 from stanza.server.parser_eval import EvaluateParser, ParseResult
 from stanza.utils.get_tqdm import get_tqdm
+from stanza.utils.conll import CoNLL
 
 tqdm = get_tqdm()
 
@@ -123,26 +124,34 @@ def build_trainer(args, train_trees, dev_trees, silver_trees, foundation_cache, 
     """
     Builds a Trainer (with model) and the train_sequences and transitions for the given trees.
     """
-    train_constituents = Tree.get_unique_constituent_labels(train_trees)
+    # train_constituents = Tree.get_unique_constituent_labels(train_trees)
+    # !! this is a dummy list, may need to be changed later
+    train_constituents = ['TOP', 'acl', 'acl_relcl', 'advcl', 'advmod', 'amod', 'appos', 'aux', 'aux_pass', 'case', 'cc', 'ccomp', 'clf', 'compound', 'conj', 'cop', 'csubj', 'csubj_pass', 'det', 'discourse', 'flat_foreign', 'flat_name', 'iobj', 'mark', 'mark_rel', 'nmod', 'nmod_tmod', 'nsubj', 'nsubj_pass', 'nummod', 'obj', 'obl', 'obl_patient', 'parataxis', 'punct', 'root', 'xcomp']
     tlogger.info("Unique constituents in training set: %s", train_constituents)
-    if args['check_valid_states']:
-        check_constituents(train_constituents, dev_trees, "dev", fail=args['strict_check_constituents'])
-        check_constituents(train_constituents, silver_trees, "silver", fail=args['strict_check_constituents'])
-    constituent_counts = Tree.get_constituent_counts(train_trees)
+    # if args['check_valid_states']:
+    #     check_constituents(train_constituents, dev_trees, "dev", fail=args['strict_check_constituents'])
+    #     check_constituents(train_constituents, silver_trees, "silver", fail=args['strict_check_constituents'])
+    # constituent_counts = Tree.get_constituent_counts(train_trees)
+    # !! this is a dummy list, may need to be changed later
+    constituent_counts = Counter({'punct': 91, 'nmod': 67, 'nsubj': 51, 'obj': 40, 'case': 40, 'mark': 27, 'advcl': 26, 'nummod': 22, 'TOP': 20, 'root': 20, 'xcomp': 20, 'parataxis': 19, 'conj': 19, 'amod': 18, 'obl': 17, 'compound': 17, 'mark_rel': 16, 'ccomp': 16, 'advmod': 15, 'flat_name': 15, 'aux': 14, 'clf': 12, 'det': 12, 'nmod_tmod': 8, 'acl_relcl': 8, 'cc': 8, 'csubj': 6, 'cop': 5, 'discourse': 5, 'iobj': 4, 'acl': 4, 'appos': 4, 'obl_patient': 3, 'aux_pass': 2, 'nsubj_pass': 1, 'csubj_pass': 1, 'flat_foreign': 1})
     tlogger.info("Constituent node counts: %s", constituent_counts)
 
-    tags = Tree.get_unique_tags(train_trees)
-    if None in tags:
-        raise RuntimeError("Fatal problem: the tagger put None on some of the nodes!")
+    # tags = Tree.get_unique_tags(train_trees)
+    # if None in tags:
+    #     raise RuntimeError("Fatal problem: the tagger put None on some of the nodes!")
+    # !! this is a dummy list, may need to be changed later 
+    tags = ['ADJ', 'ADP', 'ADV', 'AUX', 'CCONJ', 'DET', 'NOUN', 'NUM', 'PART', 'PRON', 'PROPN', 'PUNCT', 'SCONJ', 'VERB', 'X']
     tlogger.info("Unique tags in training set: %s", tags)
     # no need to fail for missing tags between train/dev set
     # the model has an unknown tag embedding
-    for tag in Tree.get_unique_tags(dev_trees):
-        if tag not in tags:
-            tlogger.info("Found tag in dev set which does not exist in train set: %s  Continuing...", tag)
+    # for tag in Tree.get_unique_tags(dev_trees):
+    #     if tag not in tags:
+    #         tlogger.info("Found tag in dev set which does not exist in train set: %s  Continuing...", tag)
 
-    unary_limit = max(max(t.count_unary_depth() for t in train_trees),
-                      max(t.count_unary_depth() for t in dev_trees)) + 1
+    # unary_limit = max(max(t.count_unary_depth() for t in train_trees),
+    #                   max(t.count_unary_depth() for t in dev_trees)) + 1
+    # !! this is a dummy number, may need to be changed later
+    unary_limit = 2
     if silver_trees:
         unary_limit = max(unary_limit, max(t.count_unary_depth() for t in silver_trees))
     tlogger.info("Unary limit: %d", unary_limit)
@@ -223,22 +232,24 @@ def train(args, model_load_file, retag_pipeline):
     with EvaluateParser(kbest=kbest) as evaluator:
         utils.ensure_dir(args['save_dir'])
 
-        train_trees = tree_reader.read_treebank(args['train_file'])
-        tlogger.info("Read %d trees for the training set", len(train_trees))
-        if args['train_remove_duplicates']:
-            train_trees = remove_duplicate_trees(train_trees, "train")
-        train_trees = remove_singleton_trees(train_trees)
+        # train_trees = tree_reader.read_treebank(args['train_file'])
+        train_trees = CoNLL.conll2dict(args['train_file'])
+        tlogger.info("Read %d trees for the training set", len(train_trees[0]))
+        # if args['train_remove_duplicates']:
+        #     train_trees = remove_duplicate_trees(train_trees, "train")
+        # train_trees = remove_singleton_trees(train_trees)
 
-        dev_trees = tree_reader.read_treebank(args['eval_file'])
-        tlogger.info("Read %d trees for the dev set", len(dev_trees))
-        dev_trees = remove_duplicate_trees(dev_trees, "dev")
+        # dev_trees = tree_reader.read_treebank(args['eval_file'])
+        dev_trees = CoNLL.conll2dict(args['eval_file'])
+        tlogger.info("Read %d trees for the dev set", len(dev_trees[0]))
+        # dev_trees = remove_duplicate_trees(dev_trees, "dev")
 
         silver_trees = []
-        if args['silver_file']:
-            silver_trees = tree_reader.read_treebank(args['silver_file'])
-            tlogger.info("Read %d trees for the silver training set", len(silver_trees))
-            if args['silver_remove_duplicates']:
-                silver_trees = remove_duplicate_trees(silver_trees, "silver")
+        # if args['silver_file']:
+        #     silver_trees = tree_reader.read_treebank(args['silver_file'])
+        #     tlogger.info("Read %d trees for the silver training set", len(silver_trees))
+        #     if args['silver_remove_duplicates']:
+        #         silver_trees = remove_duplicate_trees(silver_trees, "silver")
 
         if retag_pipeline is not None:
             tlogger.info("Retagging trees using the %s tags from the %s package...", args['retag_method'], args['retag_package'])
@@ -380,8 +391,8 @@ def iterate_training(args, trainer, train_trees, train_sequences, transitions, d
             multistage_splits[args['epochs'] * 3 // 4] = (args['pattn_num_layers'], True)
 
     oracle = None
-    if args['transition_scheme'] is TransitionScheme.IN_ORDER:
-        oracle = InOrderOracle(trainer.root_labels, args['oracle_level'], args['additional_oracle_levels'], args['deactivated_oracle_levels'])
+    # if args['transition_scheme'] is TransitionScheme.IN_ORDER:
+    #     oracle = InOrderOracle(trainer.root_labels, args['oracle_level'], args['additional_oracle_levels'], args['deactivated_oracle_levels'])
     # elif args['transition_scheme'] is TransitionScheme.IN_ORDER_COMPOUND:
     #     oracle = InOrderCompoundOracle(trainer.root_labels, args['oracle_level'], args['additional_oracle_levels'], args['deactivated_oracle_levels'])
     # elif args['transition_scheme'] is TransitionScheme.TOP_DOWN:
