@@ -2,7 +2,7 @@ from collections import namedtuple
 
 class State(namedtuple('State', ['word_queue', 'transitions', 'constituents', 'stacks', 'created_arcs', 
                                  'gold_tree', 'gold_sequence',
-                                 'sentence_length', 'word_position', 'score'])):
+                                 'sentence_length', 'word_position', 'score', 'num_opens'])):
     
     """
     Represents a partially completed transition parse
@@ -116,7 +116,7 @@ class State(namedtuple('State', ['word_queue', 'transitions', 'constituents', 's
         print(f"transitions: {self.transitions}")
         print(f"stacks: {self.stacks}")
         print(f"created_arcs: {self.created_arcs}")
-        print(f"gold_arcs: {self.gold_arcs}")
+        # print(f"gold_trees: {self.gold_trees}")
         print(f"gold_sequence: {self.gold_sequence}")
         print(f"sentence_length: {self.sentence_length}")
         print(f"word_position: {self.word_position}")

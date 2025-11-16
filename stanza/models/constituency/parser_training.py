@@ -155,12 +155,11 @@ def build_trainer(args, train_trees, dev_trees, silver_trees, foundation_cache, 
     # if silver_trees:
     #     unary_limit = max(unary_limit, max(t.count_unary_depth() for t in silver_trees))
     tlogger.info("Unary limit: %d", unary_limit)
-    print("printing train_trees")
     
     train_sequences, train_transitions = transition_sequence.convert_trees_to_sequences(train_trees, "training", args['transition_scheme'], args['reversed'])
     dev_sequences, dev_transitions = transition_sequence.convert_trees_to_sequences(dev_trees, "dev", args['transition_scheme'], args['reversed'])
     silver_sequences, silver_transitions = transition_sequence.convert_trees_to_sequences(silver_trees, "silver", args['transition_scheme'], args['reversed'])
-
+    
     tlogger.info("Total unique transitions in train set: %d", len(train_transitions))
     tlogger.info("Unique transitions in training set:\n  %s", "\n  ".join(map(str, train_transitions)))
     expanded_train_transitions = set(train_transitions + [x for trans in train_transitions for x in trans.components()])
@@ -169,9 +168,11 @@ def build_trainer(args, train_trees, dev_trees, silver_trees, foundation_cache, 
         # theoretically could just train based on the items in the silver dataset
         parse_transitions.check_transitions(expanded_train_transitions, silver_transitions, "silver")
 
-    root_labels = Tree.get_root_labels(train_trees)
-    check_root_labels(root_labels, dev_trees, "dev")
-    check_root_labels(root_labels, silver_trees, "silver")
+    # !!hardcoded to maintain the structure of the original code
+    root_labels = ['TOP']
+    # root_labels = Tree.get_root_labels(train_trees)
+    # check_root_labels(root_labels, dev_trees, "dev")
+    # check_root_labels(root_labels, silver_trees, "silver")
     tlogger.info("Root labels in treebank: %s", root_labels)
 
     verify_transitions(train_trees, train_sequences, args['transition_scheme'], unary_limit, args['reversed'], "train", root_labels)

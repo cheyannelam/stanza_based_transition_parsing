@@ -297,17 +297,24 @@ def verify_transitions(trees, sequences, transition_scheme, unary_limit, reverse
     model = SimpleModel(transition_scheme, unary_limit, reverse, root_labels)
     tlogger.info("Verifying the transition sequences for %d trees", len(trees))
 
-    data = zip(trees, sequences)
-    if tlogger.getEffectiveLevel() <= logging.INFO:
-        data = tqdm(zip(trees, sequences), total=len(trees))
+    trees = trees[0]
+    flattentrees = ud_to_flatentrees(trees)
+    data = zip(trees, flattentrees, sequences)
+    # if tlogger.getEffectiveLevel() <= logging.INFO:
+    #     data = tqdm(zip(trees, sequences), total=len(trees))
 
-    for tree_idx, (tree, sequence) in enumerate(data):
+    for tree_idx, (tree, flattentree, sequence) in enumerate(data):
         # TODO: make the SimpleModel have a parse operation?
-        state = model.initial_state_from_gold_trees([tree])[0]
+        state = model.initial_state_from_gold_trees([flattentree])[0]
+        print("print initial state")
+        print(state)
+        
         for idx, trans in enumerate(sequence):
             if not trans.is_legal(state, model):
                 raise RuntimeError("Tree {} of {} failed: transition {}:{} was not legal in a transition sequence:\nOriginal tree: {}\nTransitions: {}".format(tree_idx, name, idx, trans, tree, sequence))
             state = trans.apply(state, model)
+            print("print state")
+            print(state)
         result = model.get_top_constituent(state.constituents)
         if reverse:
             result = result.reverse()
@@ -373,3 +380,14 @@ def remove_singleton_trees(trees):
         tlogger.info("Eliminated %d trees with missing structure", (len(trees) - len(new_trees)))
     return new_trees
 
+def ud_to_flattentree(UD_tree, root_labels = 'TOP'):
+    print("print UD_tree")
+    print(UD_tree)
+    branches = [Tree(token["upos"], Tree(token["text"])) for token in UD_tree]
+    newtree = Tree(root_labels, branches)
+    print("print newtree")
+    print(newtree)
+    return newtree
+
+def ud_to_flatentrees(UD_trees, root_labels = 'TOP'):
+    return [ud_to_flattentree(ud_tree, root_labels) for ud_tree in UD_trees]

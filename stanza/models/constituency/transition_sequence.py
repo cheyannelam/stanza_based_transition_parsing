@@ -7,8 +7,8 @@ Supports multiple transition schemes - TOP_DOWN and variants, IN_ORDER
 import logging
 
 from stanza.models.common import utils
-#from stanza.models.constituency.parse_transitions import Shift, CompoundUnary, OpenConstituent, CloseConstituent, TransitionScheme, Finalize
-# from stanza.models.constituency.parse_transitions import Shift, RightArc, LeftArc, TransitionScheme
+# from stanza.models.constituency.parse_transitions import Shift, CompoundUnary, OpenConstituent, CloseConstituent, TransitionScheme, Finalize
+from stanza.models.constituency.parse_transitions import Shift, LeftArc, RightArc, TransitionScheme
 from stanza.models.constituency.parse_transitions import TransitionScheme
 from stanza.models.constituency.tree_reader import read_trees
 from stanza.utils.get_tqdm import get_tqdm
@@ -22,15 +22,15 @@ logger = logging.getLogger('stanza.constituency.trainer')
 
 
 def do_shift(buffer, stack, steps, done): 
-    steps.append([buffer[:], stack[:], "Shift"])
+    steps.append([buffer[:], stack[:], Shift()])
     stack.append(buffer.pop(0))
 
 def do_rightarc(buffer, stack, steps, done):
-    steps.append([buffer[:], stack[:], "RightArc"])
+    steps.append([buffer[:], stack[:], RightArc()])
     done.add(stack.pop(-2))
     
 def do_leftarc(buffer, stack, steps, done):
-    steps.append([buffer[:], stack[:], "LeftArc"])
+    steps.append([buffer[:], stack[:], LeftArc()])
     done.add(stack.pop(-1))
 
 def is_done(dependent, dependents, done):
@@ -46,8 +46,8 @@ def UD_to_oracle(sentence):
     Returns:
         List[List]: Each step as [buffer, stack, action]
     """ 
-    print("printing sentence")
-    print(sentence)
+    # print("printing sentence")
+    # print(sentence)
 
     for token in sentence:
             token["id"] =  token["id"][0]
@@ -123,9 +123,6 @@ def convert_trees_to_sequences(trees, treebank_name, transition_scheme, reverse=
 
     Converts trees to a list of sequences, then returns the list of known transitions
     """
-
-    
-    
     if len(trees) == 0:
         return [], []
     

@@ -25,7 +25,8 @@ import torch
 
 from stanza.models.common import utils
 from stanza.models.constituency import transition_sequence
-from stanza.models.constituency.parse_transitions import TransitionScheme, CloseConstituent
+# from stanza.models.constituency.parse_transitions import TransitionScheme, CloseConstituent
+from stanza.models.constituency.parse_transitions import TransitionScheme
 from stanza.models.constituency.parse_tree import Tree
 from stanza.models.constituency.state import State
 from stanza.models.constituency.tree_stack import TreeStack
@@ -209,7 +210,10 @@ class BaseModel(ABC):
                         transitions=transitions,
                         constituents=constituents,
                         word_position=0,
-                        score=0.0)
+                        score=0.0,
+                        created_arcs=[],
+                        stacks=[]
+                        )
                   for idx, wq in enumerate(word_queues)]
         if gold_trees:
             states = [state._replace(gold_tree=gold_tree) for gold_tree, state in zip(gold_trees, states)]
